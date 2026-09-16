@@ -117,8 +117,10 @@ class WorkdaysCard extends HTMLElement {
   }
 
   _defaultWorkdays() {
-    const st = this._hass && this._hass.states[this.config.workday_sensor];
-    return (st && st.attributes.workdays) || ["mon", "tue", "wed", "thu", "fri"];
+    const states = this._hass && this._hass.states;
+    const st = states && states[this.config.workday_sensor];
+    const days = st && st.attributes && st.attributes.workdays;
+    return Array.isArray(days) && days.length ? days : ["mon", "tue", "wed", "thu", "fri"];
   }
 
   _dayInfo(d) {
@@ -336,8 +338,10 @@ WorkdaysCard.styles = `
   /* holiday name / Override label */
   .tag { display:none; font-size:9.5px; line-height:1.15; font-weight:600; width:100%;
     padding:1px 2px; border-radius:4px; overflow:hidden; word-break:break-word;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-  .tag.show { display:-webkit-box; }
+    -webkit-line-clamp:2; -webkit-box-orient:vertical; text-align:center; }
+  /* auto margins split the leftover column space evenly above and below the label,
+     centring it between the checkbox and the bottom edge */
+  .tag.show { display:-webkit-box; margin-top:auto; margin-bottom:auto; }
   .tag.h { color:var(--warning-color,#ffa726); }
   .tag.m { color:var(--info-color,#39c0ed); }
   dialog.settings { border:none; border-radius:var(--ha-card-border-radius,14px); padding:18px 20px 16px;
