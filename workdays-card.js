@@ -13,23 +13,32 @@ class WorkdaysCard extends HTMLElement {
       title: "Workdays",
       ...config,
     };
-    this._cursor = new Date();
-    this._cursor.setDate(1);
-    this._base = new Set();
-    this._over = new Map();
-    this._loaded = null;
+    // setConfig runs again whenever Home Assistant re-applies a config to the SAME element
+    // (dashboard edits, and every time a Bubble pop-up rebuilds its children). Building the
+    // shadow root unconditionally throws on the second call and the card shows
+    // "Configuration error", so the DOM is created exactly once.
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML =
+        `<style>${WorkdaysCard.styles}</style><ha-card></ha-card><dialog class="settings"></dialog>`;
+      this._root = this.shadowRoot.querySelector("ha-card");
+      this._dlg = this.shadowRoot.querySelector("dialog.settings");
+      this._root.addEventListener("click", (e) => this._onClick(e));
+      this._dlg.addEventListener("click", (e) => {
+        if (e.target === this._dlg) return this._closeDialog();   // click on the backdrop
+        this._onClick(e);
+      });
+      this._dlg.addEventListener("close", () => { this._draft = null; });
+    }
+    if (!this._cursor) {
+      this._cursor = new Date();
+      this._cursor.setDate(1);
+    }
+    this._base = this._base || new Set();
+    this._over = this._over || new Map();
     this._draft = null;
-    this.attachShadow({ mode: "open" });
-    this.shadowRoot.innerHTML =
-      `<style>${WorkdaysCard.styles}</style><ha-card></ha-card><dialog class="settings"></dialog>`;
-    this._root = this.shadowRoot.querySelector("ha-card");
-    this._dlg = this.shadowRoot.querySelector("dialog.settings");
-    this._root.addEventListener("click", (e) => this._onClick(e));
-    this._dlg.addEventListener("click", (e) => {
-      if (e.target === this._dlg) return this._closeDialog();   // click on the backdrop
-      this._onClick(e);
-    });
-    this._dlg.addEventListener("close", () => { this._draft = null; });
+    this._loaded = null;
+    if (this._hass) this._load();
   }
 
   set hass(hass) {
