@@ -46,8 +46,18 @@ class WorkdaysCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     const key = `${this._cursor.getFullYear()}-${this._cursor.getMonth()}`;
-    if (this._loaded !== key) this._load();
-    else this._render();
+    if (this._loaded !== key) {
+      this._load();
+      return;
+    }
+    // hass changes on every state update in the system — several times a second on a busy
+    // instance. Re-rendering each time replaces the node under the cursor and the hover
+    // style restarts, which reads as flicker. Only re-render when something we show changed.
+    const sig = (this._defaultWorkdays() || []).join(",");
+    if (sig !== this._sig) {
+      this._sig = sig;
+      this._render();
+    }
   }
 
   getCardSize() { return 8; }
@@ -272,7 +282,7 @@ class WorkdaysCard extends HTMLElement {
           <span class="tag ${info.badge ? "show" : ""} ${info.badgeKind}">${info.badge}</span>
         </button>`;
     }
-    this._root.innerHTML = `
+    const html = `
       <div class="hdr">
         <div class="title">${this.config.title}</div>
         <div class="nav">
@@ -285,6 +295,11 @@ class WorkdaysCard extends HTMLElement {
       <div class="month">${monthName}</div>
       <div class="grid dow">${["S", "M", "T", "W", "T", "F", "S"].map((x) => `<div class="dowc">${x}</div>`).join("")}</div>
       <div class="grid">${cells}</div>`;
+    // identical markup: leave the existing nodes alone so hover/focus survive
+    if (html === this._html) return;
+    this._html = html;
+    this._sig = (this._defaultWorkdays() || []).join(",");
+    this._root.innerHTML = html;
   }
 }
 
