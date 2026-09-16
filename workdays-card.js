@@ -320,7 +320,7 @@ WorkdaysCard.styles = `
   .dowc { text-align:center; font-size:12px; color:var(--secondary-text-color); padding-bottom:2px; }
   /* the whole cell is a button: generous target, and children never intercept the click */
   .cell { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
-    gap:2px; border-radius:10px; padding:6px 3px 5px; min-height:66px; width:100%; cursor:pointer;
+    gap:2px; border-radius:10px; padding:6px 3px 5px; min-height:76px; width:100%; cursor:pointer;
     background:var(--secondary-background-color); border:2px solid transparent; text-align:center;
     font-family:inherit; color:inherit; transition:background .12s ease, border-color .12s ease; }
   .cell > * { pointer-events:none; }
