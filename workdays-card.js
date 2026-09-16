@@ -9,6 +9,7 @@ class WorkdaysCard extends HTMLElement {
     this.config = {
       workday_calendar: "calendar.workday_sensor_us_calendar",
       workday_sensor: "binary_sensor.workday_base",
+      holiday_calendar: "",
       settings_path: "/config/integrations/integration/workday",
       title: "Workdays",
       ...config,
@@ -36,6 +37,7 @@ class WorkdaysCard extends HTMLElement {
     }
     this._base = this._base || new Set();
     this._over = this._over || new Map();
+    this._names = this._names || new Map();
     this._draft = null;
     this._loaded = null;
     if (this._hass) this._load();
@@ -88,9 +90,10 @@ class WorkdaysCard extends HTMLElement {
     if (!this._hass) return;
     this._loaded = `${this._cursor.getFullYear()}-${this._cursor.getMonth()}`;
     const [s, e] = this._monthRange();
-    const [base, over] = await Promise.all([
+    const [base, over, hol] = await Promise.all([
       this._fetch(this.config.workday_calendar, s, e),
       this._fetch(this.config.overrides_calendar, s, e),
+      this._fetch(this.config.holiday_calendar, s, e),
     ]);
     // a slower response from a month we have since navigated away from must not clobber the current one
     if (this._loaded !== `${this._cursor.getFullYear()}-${this._cursor.getMonth()}`) return;
@@ -98,6 +101,8 @@ class WorkdaysCard extends HTMLElement {
     (base || []).forEach((ev) => this._expandInto(ev, this._base));
     this._over = new Map();
     (over || []).forEach((ev) => this._expandInto(ev, this._over));
+    this._names = new Map();
+    (hol || []).forEach((ev) => this._expandInto(ev, this._names));
     this._render();
   }
 
@@ -114,7 +119,9 @@ class WorkdaysCard extends HTMLElement {
     const forcedOn = !!ov && /workday/i.test(ov.summary);
     const holiday = normal && !base;
     const workday = ov ? forcedOn : base;
-    return { key, normal, base, ov, holiday, workday, badge: ov ? "M" : holiday ? "H" : "" };
+    const named = this._names.get(key);
+    const badge = ov ? "Override" : holiday ? (named && named.summary ? named.summary : "Holiday") : "";
+    return { key, normal, base, ov, holiday, workday, badge, badgeKind: ov ? "m" : "h" };
   }
 
   async _onClick(e) {
@@ -257,11 +264,13 @@ class WorkdaysCard extends HTMLElement {
       d.setDate(start.getDate() + i);
       const info = this._dayInfo(d);
       const out = d.getMonth() !== cur.getMonth();
-      cells += `<div class="cell${out ? " out" : ""}${info.key === todayKey ? " today" : ""}" data-date="${info.key}">
+      const label = `${d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} — ${info.workday ? "workday" : "not a workday"}${info.badge ? " (" + info.badge + ")" : ""}`;
+      cells += `<button type="button" class="cell${out ? " out" : ""}${info.key === todayKey ? " today" : ""}"
+          data-date="${info.key}" title="${label}" aria-label="${label}" aria-pressed="${info.workday}">
           <span class="num">${d.getDate()}</span>
           <span class="box ${info.workday ? "on" : "off"}">${info.workday ? "✓" : ""}</span>
-          <span class="badge ${info.badge ? "show" : ""} ${info.badge === "M" ? "m" : "h"}">${info.badge}</span>
-        </div>`;
+          <span class="tag ${info.badge ? "show" : ""} ${info.badgeKind}">${info.badge}</span>
+        </button>`;
     }
     this._root.innerHTML = `
       <div class="hdr">
@@ -275,12 +284,7 @@ class WorkdaysCard extends HTMLElement {
       </div>
       <div class="month">${monthName}</div>
       <div class="grid dow">${["S", "M", "T", "W", "T", "F", "S"].map((x) => `<div class="dowc">${x}</div>`).join("")}</div>
-      <div class="grid">${cells}</div>
-      <div class="legend">
-        <span><b class="h">H</b> holiday</span>
-        <span><b class="m">M</b> manual</span>
-        <span class="hint">checked = workday</span>
-      </div>`;
+      <div class="grid">${cells}</div>`;
   }
 }
 
@@ -297,28 +301,30 @@ WorkdaysCard.styles = `
   .month { text-align:center; font-weight:500; font-size:15px; margin:8px 0 6px; }
   .grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
   .dowc { text-align:center; font-size:12px; color:var(--secondary-text-color); padding-bottom:2px; }
-  .cell { position:relative; border-radius:8px; padding:4px 2px 16px; text-align:center; cursor:pointer;
-    background:var(--secondary-background-color); min-height:44px; }
-  .cell:hover { outline:2px solid var(--primary-color); }
-  .cell.out { opacity:0.35; }
+  /* the whole cell is a button: generous target, and children never intercept the click */
+  .cell { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    gap:2px; border-radius:10px; padding:6px 3px 5px; min-height:66px; width:100%; cursor:pointer;
+    background:var(--secondary-background-color); border:2px solid transparent; text-align:center;
+    font-family:inherit; color:inherit; transition:background .12s ease, border-color .12s ease; }
+  .cell > * { pointer-events:none; }
+  .cell:hover { background:var(--divider-color); }
+  .cell:active { transform:scale(0.97); }
+  .cell:focus-visible { outline:none; border-color:var(--primary-color); }
+  .cell.out { opacity:0.38; }
+  .cell.today { border-color:var(--primary-color); }
   .cell.today .num { color:var(--primary-color); font-weight:700; }
   .cell.busy { opacity:0.5; pointer-events:none; }
-  .num { display:block; font-size:12px; color:var(--secondary-text-color); }
-  .box { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
-    border:2px solid var(--divider-color); border-radius:4px; font-size:13px; line-height:1; margin-top:2px; }
+  .num { display:block; font-size:12px; line-height:1; color:var(--secondary-text-color); }
+  .box { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+    border:2px solid var(--divider-color); border-radius:5px; font-size:14px; line-height:1; }
   .box.on { background:var(--primary-color); border-color:var(--primary-color); color:var(--text-primary-color,#fff); }
-  .badge { position:absolute; bottom:2px; left:50%; transform:translateX(-50%); font-size:0.62rem;
-    font-weight:700; width:14px; height:14px; line-height:14px; border-radius:50%; opacity:0; }
-  .badge.show { opacity:1; }
-  .badge.h { background:var(--warning-color,#ffa726); color:#222; }
-  .badge.m { background:var(--info-color,#39c0ed); color:#222; }
-  .legend { display:flex; gap:14px; align-items:center; margin-top:10px; font-size:12.5px;
-    color:var(--secondary-text-color); }
-  .legend b { display:inline-block; width:14px; height:14px; line-height:14px; text-align:center;
-    border-radius:50%; margin-right:4px; font-size:0.62rem; }
-  .legend b.h { background:var(--warning-color,#ffa726); color:#222; }
-  .legend b.m { background:var(--info-color,#39c0ed); color:#222; }
-  .hint { margin-left:auto; font-style:italic; }
+  /* holiday name / Override label */
+  .tag { display:none; font-size:9.5px; line-height:1.15; font-weight:600; width:100%;
+    padding:1px 2px; border-radius:4px; overflow:hidden; word-break:break-word;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .tag.show { display:-webkit-box; }
+  .tag.h { color:var(--warning-color,#ffa726); }
+  .tag.m { color:var(--info-color,#39c0ed); }
   dialog.settings { border:none; border-radius:var(--ha-card-border-radius,14px); padding:18px 20px 16px;
     max-width:380px; width:calc(100vw - 48px); color:var(--primary-text-color);
     background:var(--ha-card-background,var(--card-background-color,#fff));
