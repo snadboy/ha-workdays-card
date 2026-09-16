@@ -1,8 +1,8 @@
 # Workdays Card
 
 A month grid of **workday checkboxes** for Home Assistant. Tick a day to make it a workday,
-untick it to make it a day off. Badges say *why* a day is not a workday:
-**H** = holiday, **M** = your own override.
+untick it to make it a day off. Each day says *why* it is not a workday: the **holiday's name** in orange, or
+**Override** in blue for your own changes.
 
 Built to drive the [Scheduler component](https://github.com/nielsfaber/scheduler-component):
 schedules set to `weekdays: [workday]` follow whatever this card says.
@@ -21,9 +21,9 @@ Three sources combine into one answer per day:
 
 A day is a workday when the Workday calendar has an event for it — **unless** you override it:
 
-- **`Day off`** event → not a workday (badge **M**)
-- **`Workday`** event → a workday even if it is a holiday (badge **M**)
-- would-be workday with no Workday-calendar event → holiday (badge **H**)
+- **`Day off`** event → not a workday (labelled **Override**)
+- **`Workday`** event → a workday even if it is a holiday (labelled **Override**)
+- would-be workday with no Workday-calendar event → holiday (labelled with its name)
 
 Clicking a day writes or deletes an event in your overrides calendar. Clicking a day that is
 already overridden removes the override and returns the day to its natural state.
@@ -88,6 +88,7 @@ settings_path: /config/integrations/integration/workday
 | `overrides_calendar` | — | **Required.** Calendar storing your overrides. Must support create and delete. |
 | `workday_calendar` | `calendar.workday_sensor_us_calendar` | Per-date workday source from the Workday integration. |
 | `workday_sensor` | `binary_sensor.workday_base` | Supplies `attributes.workdays` for the default week. |
+| `holiday_calendar` | *(none)* | Optional. Supplies holiday **names** for the labels; without it a holiday just reads "Holiday". |
 | `title` | `Workdays` | Card heading. |
 | `settings_path` | Workday integration page | Where "Holidays & country…" navigates. |
 
@@ -115,6 +116,9 @@ The gear opens a modal:
   discarded rather than overwriting the one you are on.
 - The settings dialog is a sibling of `ha-card`, not a child, so grid re-renders (which happen on
   every state update) cannot destroy an edit in progress.
+- **Each day is a `<button>` with `pointer-events: none` on its children.** Without that, the day
+  number, checkbox and label each swallow clicks and only thin strips of the cell respond — the
+  card looks broken in a way that is easy to blame on the toggle logic.
 
 ## License
 
