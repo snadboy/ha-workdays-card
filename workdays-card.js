@@ -296,7 +296,20 @@ class WorkdaysCard extends HTMLElement {
       data.excludes = (data.excludes || []).filter((d) => !picked.includes(d));
       // the full list is rebuilt from the toggles, so unticking and re-ticking round-trips
       if (this._worked) data.remove_holidays = [...this._worked];
-      await this._hass.callApi("POST", `config/config_entries/options/flow/${flow.flow_id}`, data);
+      let res = await this._hass.callApi("POST", `config/config_entries/options/flow/${flow.flow_id}`, data);
+      // Workday validates remove_holidays against the python holidays library's own names, which
+      // are not the names your holiday calendar uses ("Washington's Birthday" vs "Presidents' Day").
+      // Names that match apply every year; for the rest fall back to explicit dates, which always
+      // validate but only cover the dates we can see.
+      if (res && res.type === "form" && res.errors && res.errors.remove_holidays) {
+        const dates = (this._holidays || []).filter((h) => this._worked.has(h.name)).map((h) => h.date);
+        data.remove_holidays = dates;
+        this._byDate = true;
+        res = await this._hass.callApi("POST", `config/config_entries/options/flow/${flow.flow_id}`, data);
+      }
+      if (res && res.type === "form") {
+        throw new Error("Workday rejected the options: " + JSON.stringify(res.errors || {}));
+      }
       this._closeDialog();
       // the integration reloads and regenerates its calendar; until it does, the fetch
       // comes back empty and every day would render as a holiday. retry until it answers.

@@ -108,6 +108,19 @@ The gear opens a modal:
 - **Holidays & country…** — opens the full Workday options for country, province and
   `add_holidays`.
 
+### Names vs dates
+
+`remove_holidays` accepts a holiday **name** or a **date**, and a name applies every year. But
+Workday validates names against the `holidays` python library, whose spellings differ from those
+on a typical holiday calendar — *Washington's Birthday* rather than "Presidents' Day",
+*Juneteenth National Independence Day* rather than "Juneteenth". A name it does not recognise is
+rejected outright with `remove_holiday_error`.
+
+The card therefore submits names first and, if Workday rejects them, falls back to explicit dates.
+Dates always validate, but they only cover the occurrences the card can see (the next 12 months),
+so those holidays need re-ticking next year. A name that *is* recognised — "Columbus Day" is —
+applies indefinitely.
+
 ### Why a reference calendar is needed
 
 Home Assistant does **not** expose a config entry's stored options to the frontend — neither
