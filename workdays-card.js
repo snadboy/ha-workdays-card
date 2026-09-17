@@ -153,15 +153,19 @@ class WorkdaysCard extends HTMLElement {
       if (n === "hol-toggle") {
         const name = nav.dataset.name;
         const list = this._removed || [];
-        this._removed = list.includes(name) ? list.filter((x) => x !== name) : [...list, name];
-        this._renderDialog();
+        const worked = list.includes(name);        // currently in remove_holidays => a working day
+        this._removed = worked ? list.filter((x) => x !== name) : [...list, name];
+        nav.classList.toggle("on", worked);        // ticked = day off
+        const box = nav.querySelector(".holbox");
+        if (box) box.textContent = worked ? "✓" : "";
         return;
       }
       if (n === "wd-toggle") {
         const d = nav.dataset.day;
-        this._draft = this._draft.includes(d) ? this._draft.filter((x) => x !== d) : [...this._draft, d];
-        this._renderDialog();
-        return;
+        const on = this._draft.includes(d);
+        this._draft = on ? this._draft.filter((x) => x !== d) : [...this._draft, d];
+        nav.classList.toggle("on", !on);          // touch just this chip: a full re-render
+        return;                                    // would drop the list's scroll position
       }
       if (n === "cancel") { this._closeDialog(); return; }
       if (n === "save") { this._saveSettings(nav); return; }
