@@ -119,6 +119,46 @@ The gear opens a modal:
 - **Each day is a `<button>` with `pointer-events: none` on its children.** Without that, the day
   number, checkbox and label each swallow clicks and only thin strips of the cell respond — the
   card looks broken in a way that is easy to blame on the toggle logic.
+- **Centring inside a cell uses a flex-grow wrapper, not auto margins.** With a column `gap` and
+  padding in play, `margin: auto` does not split the leftover height evenly — the label ended up
+  6px below the checkbox and 11px above the bottom edge.
+
+## Developing this card
+
+Edit `workdays-card.js`, then ship it as a release — that is the whole loop:
+
+```bash
+git commit -am "..." && git push
+gh release create v1.0.7 workdays-card.js --title "v1.0.7" --notes "..."
+```
+
+Then in HACS: **Update information** on the card, and install the new version. The
+`?hacstag=` in the resource URL changes with each version, so caches invalidate on their own —
+there is no `?v=` to bump.
+
+### ⚠️ Do not edit the installed copy in place
+
+HACS writes **two** files into `/config/www/community/ha-workdays-card/`:
+
+```
+workdays-card.js
+workdays-card.js.gz     <-- Home Assistant serves this one
+```
+
+Home Assistant's static handler prefers the pre-compressed `.gz` for any browser that advertises
+gzip, which is all of them. Overwriting only the `.js` therefore changes **nothing you can see**:
+the browser keeps getting the old bytes, a hard refresh does not help, and neither does a fresh
+browser profile, because the staleness is server-side. It is a genuinely confusing failure — edits
+appear to do nothing at all.
+
+If you must patch the live copy for a quick test, write both:
+
+```bash
+cat workdays-card.js | ssh <ha> "sudo tee /config/www/community/ha-workdays-card/workdays-card.js >/dev/null"
+gzip -9 -c workdays-card.js | ssh <ha> "sudo tee /config/www/community/ha-workdays-card/workdays-card.js.gz >/dev/null"
+```
+
+Cutting a release is the safer path: HACS rewrites both files and bumps the cache tag.
 
 ## License
 
