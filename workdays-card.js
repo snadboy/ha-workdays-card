@@ -38,6 +38,7 @@ class WorkdaysCard extends HTMLElement {
     this._base = this._base || new Set();
     this._over = this._over || new Map();
     this._names = this._names || new Map();
+    this._removed = this._removed === undefined ? null : this._removed;
     this._draft = null;
     this._loaded = null;
     if (this._hass) this._load();
@@ -142,8 +143,18 @@ class WorkdaysCard extends HTMLElement {
       const n = nav.dataset.nav;
       if (n === "settings") {
         this._draft = [...this._defaultWorkdays()];
+        this._removed = null;
+        this._holidays = [];
         this._renderDialog();
         if (!this._dlg.open) this._dlg.showModal();
+        this._loadSettings();
+        return;
+      }
+      if (n === "hol-toggle") {
+        const name = nav.dataset.name;
+        const list = this._removed || [];
+        this._removed = list.includes(name) ? list.filter((x) => x !== name) : [...list, name];
+        this._renderDialog();
         return;
       }
       if (n === "wd-toggle") {
@@ -197,6 +208,59 @@ class WorkdaysCard extends HTMLElement {
     await this._load();
   }
 
+  async _entryId() {
+    const entries = await this._hass.callWS({ type: "config_entries/get" });
+    const entry = entries.find((e) => e.domain === "workday");
+    if (!entry) throw new Error("Workday integration not found");
+    return entry.entry_id;
+  }
+
+  // start an options flow purely to read its defaults (they are the current values), then abort it
+  async _readOptions() {
+    const flow = await this._hass.callApi("POST", "config/config_entries/options/flow",
+      { handler: await this._entryId(), show_advanced_options: true });
+    const data = {};
+    (flow.data_schema || []).forEach((f) => { if (f.default !== undefined) data[f.name] = f.default; });
+    try { await this._hass.callApi("DELETE", `config/config_entries/options/flow/${flow.flow_id}`); } catch (e) { /* best effort */ }
+    return data;
+  }
+
+  async _loadSettings() {
+    try {
+      const opts = await this._readOptions();
+      this._removed = (opts.remove_holidays || []).map(String);
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 365);
+      const [hol, work] = await Promise.all([
+        this._fetch(this.config.holiday_calendar, start, end),
+        this._fetch(this.config.workday_calendar, start, end),
+      ]);
+      const workDates = new Set();
+      (work || []).forEach((ev) => this._expandInto(ev, workDates));
+      const wd = this._defaultWorkdays();
+      const seen = new Set();
+      const list = [];
+      (hol || []).forEach((ev) => {
+        const date = (ev.start && (ev.start.date || ev.start.dateTime) || "").slice(0, 10);
+        const name = ev.summary || "";
+        if (!date || !name || seen.has(name)) return;
+        const d = new Date(date + "T00:00:00");
+        if (!wd.includes(WD[d.getDay()])) return;                 // weekend holidays are moot
+        const observed = !workDates.has(date);
+        const removed = this._removed.some((r) => name.toLowerCase().includes(String(r).toLowerCase()));
+        if (!observed && !removed) return;                        // an ordinary observance, not a public holiday
+        seen.add(name);
+        list.push({ date, name, observed });
+      });
+      this._holidays = list;
+      if (this._dlg.open) this._renderDialog();
+    } catch (err) {
+      console.error("workdays-card settings:", err);
+    }
+  }
+
   _closeDialog() {
     if (this._dlg.open) this._dlg.close();
     this._draft = null;
@@ -218,6 +282,7 @@ class WorkdaysCard extends HTMLElement {
       data.workdays = picked;
       // a day cannot be both a workday and excluded
       data.excludes = (data.excludes || []).filter((d) => !picked.includes(d));
+      if (this._removed) data.remove_holidays = this._removed;
       await this._hass.callApi("POST", `config/config_entries/options/flow/${flow.flow_id}`, data);
       this._closeDialog();
       // the integration reloads and regenerates its calendar; until it does, the fetch
@@ -251,10 +316,23 @@ class WorkdaysCard extends HTMLElement {
       <div class="sect">Default workdays</div>
       <div class="chips">${chips}</div>
       <div class="note">Holidays are excluded automatically. These are the days that count as workdays before holidays and your own overrides are applied.</div>
-      <div class="sect">Holiday source</div>
-      <div class="note mono">${this.config.workday_calendar}<br>${st ? (st.attributes.country || "Workday integration") : "unavailable"}</div>
-      <div class="sect">Your overrides</div>
-      <div class="note mono">${this.config.overrides_calendar}</div>
+      <div class="sect">Holidays you take off</div>
+      ${this._holidays === undefined || this._removed === null
+        ? '<div class="note">Loading…</div>'
+        : (this._holidays.length
+            ? `<div class="hols">` + this._holidays.map((h) => {
+                const worked = this._removed.some((r) => h.name.toLowerCase().includes(String(r).toLowerCase()));
+                return `<button type="button" class="hol ${worked ? "" : "on"}" data-nav="hol-toggle" data-name="${h.name}">
+                  <span class="holbox">${worked ? "" : "✓"}</span>
+                  <span class="holname">${h.name}</span>
+                  <span class="holdate">${new Date(h.date + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+                </button>`;
+              }).join("") + `</div>
+              <div class="note">Ticked means the day is off. Untick one you work — Columbus Day, say — and it becomes
+              an ordinary workday every year, not just this one.</div>`
+            : '<div class="note">No holidays found in the next 12 months.</div>')}
+      <div class="sect">Calendars in use</div>
+      <div class="note mono">${this.config.workday_calendar}<br>${this.config.overrides_calendar}</div>
       <div class="actions">
         <button data-nav="advanced" class="ghost">Holidays &amp; country…</button>
         <button data-nav="cancel" class="ghost">Cancel</button>
@@ -357,6 +435,18 @@ WorkdaysCard.styles = `
     background:var(--secondary-background-color); border:2px solid transparent; }
   .chip.on { background:var(--primary-color); color:var(--text-primary-color,#fff); }
   .note { font-size:13px; color:var(--secondary-text-color); line-height:1.5; }
+  .hols { display:flex; flex-direction:column; gap:4px; max-height:190px; overflow-y:auto; margin-bottom:8px; }
+  .hol { display:flex; align-items:center; gap:10px; width:100%; padding:7px 10px; border-radius:10px;
+    background:var(--secondary-background-color); border:2px solid transparent; cursor:pointer;
+    font-family:inherit; font-size:13px; color:var(--primary-text-color); text-align:left; }
+  .hol:hover { background:var(--divider-color); }
+  .hol:focus-visible { outline:none; border-color:var(--primary-color); }
+  .holbox { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px;
+    border:2px solid var(--divider-color); border-radius:5px; font-size:13px; line-height:1; }
+  .hol.on .holbox { background:var(--primary-color); border-color:var(--primary-color); color:var(--text-primary-color,#fff); }
+  .hol:not(.on) .holname { color:var(--secondary-text-color); text-decoration:line-through; }
+  .holname { flex:1 1 auto; }
+  .holdate { flex:0 0 auto; color:var(--secondary-text-color); font-size:12px; }
   .note.mono { font-family:var(--code-font-family,monospace); font-size:12.5px; }
   .actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
   .primary { background:var(--primary-color); color:var(--text-primary-color,#fff); padding:8px 18px; font-size:14px; }
