@@ -10,6 +10,7 @@ class WorkdaysCard extends HTMLElement {
       workday_calendar: "calendar.workday_sensor_us_calendar",
       workday_sensor: "binary_sensor.workday_base",
       holiday_calendar: "",
+      reference_calendar: "",
       settings_path: "/config/integrations/integration/workday",
       title: "Workdays",
       ...config,
@@ -38,7 +39,7 @@ class WorkdaysCard extends HTMLElement {
     this._base = this._base || new Set();
     this._over = this._over || new Map();
     this._names = this._names || new Map();
-    this._removed = this._removed === undefined ? null : this._removed;
+    this._worked = this._worked === undefined ? null : this._worked;
     this._draft = null;
     this._loaded = null;
     if (this._hass) this._load();
@@ -143,8 +144,8 @@ class WorkdaysCard extends HTMLElement {
       const n = nav.dataset.nav;
       if (n === "settings") {
         this._draft = [...this._defaultWorkdays()];
-        this._removed = null;
-        this._holidays = [];
+        this._worked = null;
+        this._holidays = undefined;
         this._renderDialog();
         if (!this._dlg.open) this._dlg.showModal();
         this._loadSettings();
@@ -152,9 +153,8 @@ class WorkdaysCard extends HTMLElement {
       }
       if (n === "hol-toggle") {
         const name = nav.dataset.name;
-        const list = this._removed || [];
-        const worked = list.includes(name);        // currently in remove_holidays => a working day
-        this._removed = worked ? list.filter((x) => x !== name) : [...list, name];
+        const worked = this._worked.has(name);     // worked => currently removed from the sensor
+        if (worked) this._worked.delete(name); else this._worked.add(name);
         nav.classList.toggle("on", worked);        // ticked = day off
         const box = nav.querySelector(".holbox");
         if (box) box.textContent = worked ? "✓" : "";
@@ -231,34 +231,42 @@ class WorkdaysCard extends HTMLElement {
 
   async _loadSettings() {
     try {
-      const opts = await this._readOptions();
-      this._removed = (opts.remove_holidays || []).map(String);
       const start = new Date();
       start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(end.getDate() + 365);
-      const [hol, work] = await Promise.all([
+      const [hol, work, ref] = await Promise.all([
         this._fetch(this.config.holiday_calendar, start, end),
         this._fetch(this.config.workday_calendar, start, end),
+        this._fetch(this.config.reference_calendar, start, end),
       ]);
       const workDates = new Set();
       (work || []).forEach((ev) => this._expandInto(ev, workDates));
+      const refDates = new Set();
+      (ref || []).forEach((ev) => this._expandInto(ev, refDates));
+      const haveRef = !!this.config.reference_calendar && refDates.size > 0;
       const wd = this._defaultWorkdays();
       const seen = new Set();
       const list = [];
+      const worked = new Set();
       (hol || []).forEach((ev) => {
-        const date = (ev.start && (ev.start.date || ev.start.dateTime) || "").slice(0, 10);
+        const date = ((ev.start && (ev.start.date || ev.start.dateTime)) || "").slice(0, 10);
         const name = ev.summary || "";
         if (!date || !name || seen.has(name)) return;
         const d = new Date(date + "T00:00:00");
-        if (!wd.includes(WD[d.getDay()])) return;                 // weekend holidays are moot
-        const observed = !workDates.has(date);
-        const removed = this._removed.some((r) => name.toLowerCase().includes(String(r).toLowerCase()));
-        if (!observed && !removed) return;                        // an ordinary observance, not a public holiday
+        if (!wd.includes(WD[d.getDay()])) return;          // weekend holidays are moot
+        // the reference calendar knows every public holiday, including ones removed from the
+        // working sensor. Without it we can only see the holidays still being observed.
+        const isPublic = haveRef ? !refDates.has(date) : !workDates.has(date);
+        if (!isPublic) return;                              // ordinary observance (Halloween, etc.)
         seen.add(name);
-        list.push({ date, name, observed });
+        const isWorked = workDates.has(date);
+        if (isWorked) worked.add(name);
+        list.push({ date, name, worked: isWorked });
       });
+      this._worked = worked;
       this._holidays = list;
+      this._haveRef = haveRef;
       if (this._dlg.open) this._renderDialog();
     } catch (err) {
       console.error("workdays-card settings:", err);
@@ -286,7 +294,8 @@ class WorkdaysCard extends HTMLElement {
       data.workdays = picked;
       // a day cannot be both a workday and excluded
       data.excludes = (data.excludes || []).filter((d) => !picked.includes(d));
-      if (this._removed) data.remove_holidays = this._removed;
+      // the full list is rebuilt from the toggles, so unticking and re-ticking round-trips
+      if (this._worked) data.remove_holidays = [...this._worked];
       await this._hass.callApi("POST", `config/config_entries/options/flow/${flow.flow_id}`, data);
       this._closeDialog();
       // the integration reloads and regenerates its calendar; until it does, the fetch
@@ -321,11 +330,11 @@ class WorkdaysCard extends HTMLElement {
       <div class="chips">${chips}</div>
       <div class="note">Holidays are excluded automatically. These are the days that count as workdays before holidays and your own overrides are applied.</div>
       <div class="sect">Holidays you take off</div>
-      ${this._holidays === undefined || this._removed === null
+      ${this._holidays === undefined || this._worked === null
         ? '<div class="note">Loading…</div>'
         : (this._holidays.length
             ? `<div class="hols">` + this._holidays.map((h) => {
-                const worked = this._removed.some((r) => h.name.toLowerCase().includes(String(r).toLowerCase()));
+                const worked = this._worked.has(h.name);
                 return `<button type="button" class="hol ${worked ? "" : "on"}" data-nav="hol-toggle" data-name="${h.name}">
                   <span class="holbox">${worked ? "" : "✓"}</span>
                   <span class="holname">${h.name}</span>
@@ -333,7 +342,7 @@ class WorkdaysCard extends HTMLElement {
                 </button>`;
               }).join("") + `</div>
               <div class="note">Ticked means the day is off. Untick one you work — Columbus Day, say — and it becomes
-              an ordinary workday every year, not just this one.</div>`
+              an ordinary workday every year, not just this one.${this._haveRef ? "" : "<br><b>No reference_calendar configured</b>, so holidays you already work cannot be listed or restored here."}</div>`
             : '<div class="note">No holidays found in the next 12 months.</div>')}
       <div class="sect">Calendars in use</div>
       <div class="note mono">${this.config.workday_calendar}<br>${this.config.overrides_calendar}</div>

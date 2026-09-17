@@ -89,6 +89,7 @@ settings_path: /config/integrations/integration/workday
 | `workday_calendar` | `calendar.workday_sensor_us_calendar` | Per-date workday source from the Workday integration. |
 | `workday_sensor` | `binary_sensor.workday_base` | Supplies `attributes.workdays` for the default week. |
 | `holiday_calendar` | *(none)* | Optional. Supplies holiday **names** for the labels; without it a holiday just reads "Holiday". |
+| `reference_calendar` | *(none)* | Optional. A **second** Workday integration entry with no `remove_holidays`. Lets Settings list every public holiday — including ones you have opted to work — so they can be switched back on. |
 | `title` | `Workdays` | Card heading. |
 | `settings_path` | Workday integration page | Where "Holidays & country…" navigates. |
 
@@ -100,8 +101,24 @@ The gear opens a modal:
   so it is the same write HA's UI performs. A day ticked here is also removed from Workday's
   `excludes` list, otherwise the exclusion would silently win.
 - **Holiday source / Your overrides** — shows the calendars in use.
-- **Holidays & country…** — opens the full Workday options for country, province,
-  `add_holidays` and `remove_holidays`.
+- **Holidays you take off** — every public holiday in the next 12 months, with a checkbox.
+  Untick one you work (Columbus Day is the usual case) and it is written to the Workday
+  integration's `remove_holidays`. That matches **by name**, so it applies every year — no
+  per-date override needed, and the day disappears from the holiday list everywhere.
+- **Holidays & country…** — opens the full Workday options for country, province and
+  `add_holidays`.
+
+### Why a reference calendar is needed
+
+Home Assistant does **not** expose a config entry's stored options to the frontend — neither
+`config_entries/get` nor `config_entries/get_single` returns them, and the Workday options flow
+does not prefill `remove_holidays` either (it always offers an empty list, even when removals are
+stored). A card therefore cannot read which holidays you have already removed.
+
+The workaround is a second Workday entry with **no** removals, pointed at by `reference_calendar`.
+Comparing the two calendars makes the state observable: a date the reference calls a holiday but
+the working sensor calls a workday is one you have chosen to work. Without it the card can still
+*remove* holidays, but cannot list or restore ones already removed.
 
 ## Notes and gotchas
 
