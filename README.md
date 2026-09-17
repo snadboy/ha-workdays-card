@@ -133,6 +133,11 @@ Comparing the two calendars makes the state observable: a date the reference cal
 the working sensor calls a workday is one you have chosen to work. Without it the card can still
 *remove* holidays, but cannot list or restore ones already removed.
 
+Both entries default to the same title (*Workday Sensor US*), so **rename the reference one** —
+otherwise Settings → Devices & Services shows two identical cards and it is easy to edit the wrong
+one. Renaming a config entry is a websocket-only operation (`config_entries/update`); in the UI it
+is the pencil on the entry, and the device gets its own rename separately.
+
 ## Notes and gotchas
 
 - **Root font-size is 14px in Home Assistant**, not the browser's 16px. `rem` sizes render ~12%
