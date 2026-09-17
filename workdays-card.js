@@ -281,7 +281,7 @@ class WorkdaysCard extends HTMLElement {
           data-date="${info.key}" title="${label}" aria-label="${label}" aria-pressed="${info.workday}">
           <span class="num">${d.getDate()}</span>
           <span class="box ${info.workday ? "on" : "off"}">${info.workday ? "✓" : ""}</span>
-          <span class="tag ${info.badge ? "show" : ""} ${info.badgeKind}">${info.badge}</span>
+          <span class="tagwrap"><span class="tag ${info.badge ? "show" : ""} ${info.badgeKind}">${info.badge}</span></span>
         </button>`;
     }
     const html = `
@@ -320,7 +320,7 @@ WorkdaysCard.styles = `
   .dowc { text-align:center; font-size:12px; color:var(--secondary-text-color); padding-bottom:2px; }
   /* the whole cell is a button: generous target, and children never intercept the click */
   .cell { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
-    gap:2px; border-radius:10px; padding:6px 3px 5px; min-height:76px; width:100%; cursor:pointer;
+    gap:2px; border-radius:10px; padding:6px 3px 0; min-height:76px; width:100%; cursor:pointer;
     background:var(--secondary-background-color); border:2px solid transparent; text-align:center;
     font-family:inherit; color:inherit; transition:background .12s ease, border-color .12s ease; }
   .cell > * { pointer-events:none; }
@@ -336,12 +336,14 @@ WorkdaysCard.styles = `
     border:2px solid var(--divider-color); border-radius:5px; font-size:14px; line-height:1; }
   .box.on { background:var(--primary-color); border-color:var(--primary-color); color:var(--text-primary-color,#fff); }
   /* holiday name / Override label */
+  /* the wrapper takes all the space left under the checkbox; the label is centred inside it,
+     which is what makes the gap above and below the text equal */
+  .tagwrap { flex:1 1 auto; display:flex; align-items:center; justify-content:center;
+    width:100%; min-height:0; }
   .tag { display:none; font-size:9.5px; line-height:1.15; font-weight:600; width:100%;
-    padding:1px 2px; border-radius:4px; overflow:hidden; word-break:break-word;
+    border-radius:4px; overflow:hidden; word-break:break-word;
     -webkit-line-clamp:2; -webkit-box-orient:vertical; text-align:center; }
-  /* auto margins split the leftover column space evenly above and below the label,
-     centring it between the checkbox and the bottom edge */
-  .tag.show { display:-webkit-box; margin-top:auto; margin-bottom:auto; }
+  .tag.show { display:-webkit-box; }
   .tag.h { color:var(--warning-color,#ffa726); }
   .tag.m { color:var(--info-color,#39c0ed); }
   dialog.settings { border:none; border-radius:var(--ha-card-border-radius,14px); padding:18px 20px 16px;
